@@ -282,7 +282,10 @@ async def resolve_extracted_nodes(
         if duplicate_idx not in duplicates and duplicate_idx > -1:
             duplicates.append(duplicate_idx)
         for idx in duplicates:
-            existing_node = existing_nodes[idx] if idx < len(existing_nodes) else resolved_node
+            # Only log when we encounter invalid indices for debugging
+            if idx < 0 or idx >= len(existing_nodes):
+                logger.debug(f'Invalid duplicate idx={idx} for resolution {resolution.id}, using resolved_node instead')
+            existing_node = existing_nodes[idx] if 0 <= idx < len(existing_nodes) else resolved_node
 
             node_duplicates.append((extracted_node, existing_node))
 

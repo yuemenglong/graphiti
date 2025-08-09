@@ -196,6 +196,7 @@ class GraphitiLLMConfig(BaseModel):
     model: str = DEFAULT_LLM_MODEL
     small_model: str = SMALL_LLM_MODEL
     temperature: float = 0.0
+    base_url: str | None = None
     azure_openai_endpoint: str | None = None
     azure_openai_deployment_name: str | None = None
     azure_openai_api_version: str | None = None
@@ -236,6 +237,7 @@ class GraphitiLLMConfig(BaseModel):
                 model=model,
                 small_model=small_model,
                 temperature=float(os.environ.get('LLM_TEMPERATURE', '0.0')),
+                base_url=os.environ.get('OPENAI_BASE_URL'),
             )
         else:
             # Setup for Azure OpenAI API
@@ -337,7 +339,7 @@ class GraphitiLLMConfig(BaseModel):
             raise ValueError('OPENAI_API_KEY must be set when using OpenAI API')
 
         llm_client_config = LLMConfig(
-            api_key=self.api_key, model=self.model, small_model=self.small_model
+            api_key=self.api_key, model=self.model, small_model=self.small_model, base_url=self.base_url
         )
 
         # Set temperature
@@ -354,6 +356,7 @@ class GraphitiEmbedderConfig(BaseModel):
 
     model: str = DEFAULT_EMBEDDER_MODEL
     api_key: str | None = None
+    base_url: str | None = None
     azure_openai_endpoint: str | None = None
     azure_openai_deployment_name: str | None = None
     azure_openai_api_version: str | None = None
@@ -407,7 +410,8 @@ class GraphitiEmbedderConfig(BaseModel):
         else:
             return cls(
                 model=model,
-                api_key=os.environ.get('OPENAI_API_KEY'),
+                api_key=os.environ.get('EMBEDDING_API_KEY', os.environ.get('OPENAI_API_KEY')),
+                base_url=os.environ.get('EMBEDDING_BASE_URL', os.environ.get('OPENAI_BASE_URL')),
             )
 
     def create_client(self) -> EmbedderClient | None:
@@ -444,7 +448,7 @@ class GraphitiEmbedderConfig(BaseModel):
             if not self.api_key:
                 return None
 
-            embedder_config = OpenAIEmbedderConfig(api_key=self.api_key, embedding_model=self.model)
+            embedder_config = OpenAIEmbedderConfig(api_key=self.api_key, embedding_model=self.model, base_url=self.base_url)
 
             return OpenAIEmbedder(config=embedder_config)
 
@@ -800,9 +804,11 @@ async def add_memory(
 
                 logger.info(f"Episode '{name}' processed successfully")
             except Exception as e:
+                import traceback
                 error_msg = str(e)
+                stack_trace = traceback.format_exc().replace('\n', ' | ')
                 logger.error(
-                    f"Error processing episode '{name}' for group_id {group_id_str}: {error_msg}"
+                    f"Error processing episode '{name}' for group_id {group_id_str}: {error_msg} | Stack: {stack_trace}"
                 )
 
         # Initialize queue for this group_id if it doesn't exist
@@ -1200,6 +1206,12 @@ async def initialize_server() -> MCPConfig:
         default=os.environ.get('MCP_SERVER_HOST'),
         help='Host to bind the MCP server to (default: MCP_SERVER_HOST environment variable)',
     )
+    parser.add_argument(
+        '--port',
+        type=int,
+        default=int(os.environ.get('MCP_SERVER_PORT', '18123')),
+        help='Port to bind the MCP server to (default: 18123)',
+    )
 
     args = parser.parse_args()
 
@@ -1225,6 +1237,11 @@ async def initialize_server() -> MCPConfig:
         logger.info(f'Setting MCP server host to: {args.host}')
         # Set MCP server host from CLI or env
         mcp.settings.host = args.host
+    
+    if args.port:
+        logger.info(f'Setting MCP server port to: {args.port}')
+        # Set MCP server port from CLI or env
+        mcp.settings.port = args.port
 
     # Return MCP configuration
     return MCPConfig.from_cli(args)

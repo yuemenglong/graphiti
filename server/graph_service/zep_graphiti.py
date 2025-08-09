@@ -77,12 +77,14 @@ async def get_graphiti(settings: ZepEnvDep):
         user=settings.neo4j_user,
         password=settings.neo4j_password,
     )
-    if settings.openai_base_url is not None:
+    if settings.openai_base_url:
         client.llm_client.config.base_url = settings.openai_base_url
-    if settings.openai_api_key is not None:
+    if settings.openai_api_key:
         client.llm_client.config.api_key = settings.openai_api_key
-    if settings.model_name is not None:
+    if settings.model_name:
         client.llm_client.model = settings.model_name
+    if settings.embedding_base_url:
+        client.embedder.config.base_url = settings.embedding_base_url
 
     try:
         yield client
