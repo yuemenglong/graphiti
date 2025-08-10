@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
+import asyncio
 import json
 import logging
 import typing
@@ -45,6 +46,8 @@ class BaseOpenAIClient(LLMClient):
 
     # Class-level constants
     MAX_RETRIES: ClassVar[int] = 2
+    RATE_LIMIT_MAX_RETRIES: ClassVar[int] = 10
+    RATE_LIMIT_SLEEP_TIME: ClassVar[int] = 10  # seconds
 
     def __init__(
         self,
@@ -171,6 +174,7 @@ class BaseOpenAIClient(LLMClient):
             max_tokens = self.max_tokens
 
         retry_count = 0
+        rate_limit_retry_count = 0
         last_error = None
 
         # Add multilingual extraction instructions
@@ -182,8 +186,23 @@ class BaseOpenAIClient(LLMClient):
                     messages, response_model, max_tokens, model_size
                 )
                 return response
-            except (RateLimitError, RefusalError):
-                # These errors should not trigger retries
+            except RateLimitError as e:
+                # Handle rate limit errors with sleep and retry
+                rate_limit_retry_count += 1
+                if rate_limit_retry_count > self.RATE_LIMIT_MAX_RETRIES:
+                    logger.error(
+                        f'Rate limit retry exhausted after {self.RATE_LIMIT_MAX_RETRIES} attempts'
+                    )
+                    raise e
+                
+                logger.warning(
+                    f'Rate limit hit, sleeping for {self.RATE_LIMIT_SLEEP_TIME}s '
+                    f'(retry {rate_limit_retry_count}/{self.RATE_LIMIT_MAX_RETRIES})'
+                )
+                await asyncio.sleep(self.RATE_LIMIT_SLEEP_TIME)
+                continue  # Retry without incrementing the normal retry count
+            except RefusalError:
+                # RefusalError should not trigger retries
                 raise
             except (openai.APITimeoutError, openai.APIConnectionError, openai.InternalServerError):
                 # Let OpenAI's client handle these retries
